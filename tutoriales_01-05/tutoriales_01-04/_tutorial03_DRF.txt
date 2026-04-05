@@ -1,0 +1,124 @@
+
+--- PAGE 1 ---
+Tutorial 03: Introducci´ on a APIs con DRF
+De Monolito HTML a Backend Headless
+Prof. Nicol´ as Ram´ ırez V´ elez - Arquitectura de Software 2026
+1. Objetivo
+Implementar una capa de API REST utilizandoDjango Rest Framework (DRF).
+El objetivo arquitect´ onico es demostrar la reutilizaci´ on de laCapa de Serviciocreada
+en sesiones anteriores, permitiendo que la l´ ogica de negocio sirva tanto a vistas HTML
+como a clientes JSON.
+—
+2. Paso 1: Instalaci´ on y Configuraci´ on
+Primero, debemos instalar la librer´ ıa que act´ ua como est´ andar de la industria para
+APIs en Django.
+Terminal
+# Desde su entorno virtual
+pip install djangorestframework markdown django-filter
+# O bien desde una terminal de Anaconda,
+# ejecute los siguientes comandos
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+conda install djangorestframework
+A˜ nada’restframework’a suINSTALLED APPSensettings.py.
+—
+3. Paso 2: El Adaptador (Serializer)
+El Serializer es el patr´ on Adapter aplicado a datos. Transformar´ a nuestros modelos y
+objetos de dominio en JSON. Cree el archivotienda app/api/serializers.py.
+from r e s t _ f r a m e w o r k import s e r i a l i z e r s
+from t i e n d a _ a p p . models import Libro , Orden
+class L i b r o S e r i a l i z e r ( s e r i a l i z e r s . M o d e l S e r i a l i z e r ) :
+class Meta :
+model = Libro
+fields = [ ’ id ’ , ’ titulo ’ , ’ precio ’ , ’ s t o c k _ a c t u a l ’]
+1
+--- PAGE 2 ---
+# Nota : ’ s t o c k _ a c t u a l ’ puede ser un campo c al cu la do o
+p ro pi ed ad del modelo
+class O r d e n I n p u t S e r i a l i z e r ( s e r i a l i z e r s . S e r i a l i z e r ) :
+" " "
+␣ ␣ ␣ ␣ S e r i a l i z e r ␣ para ␣ VALIDAR ␣ la ␣ entrada ␣ de ␣ datos , ␣ no ␣
+n e c e s a r i a m e n t e ␣ ligado ␣ a ␣ un ␣ modelo .
+␣ ␣ ␣ ␣ Actua ␣ como ␣ un ␣ DTO ␣ ( Data ␣ Transfer ␣ Object ) .
+␣ ␣ ␣ ␣ " " "
+libro_id = s e r i a l i z e r s . I n t e g e r F i e l d ()
+d i r e c c i o n _ e n v i o = s e r i a l i z e r s . C ha rF ie ld ( m a x _ l e n g t h =200)
+# V a l i d a c i o n e s extras aqui si fueran n e c e s a r i a s
+—
+4. Paso 3: La API View (El Controlador)
+Aqu´ ı ocurre la magia de la arquitectura limpia. En lugar de reescribir la l´ ogica de
+compra, la API View simplemente act´ ua como un nuevo cliente para nuestro Servicio
+existente.
+Cree o editetienda app/api/views.py:
+from r e s t _ f r a m e w o r k . views import APIView
+from r e s t _ f r a m e w o r k . response import Response
+from r e s t _ f r a m e w o r k import status
+from . s e r i a l i z e r s import O r d e n I n p u t S e r i a l i z e r
+from t i e n d a _ a p p . services import C o m p r a S e r v i c e # <---
+R E U T I L I Z A C I O N
+from t i e n d a _ a p p . infra . f ac to r ie s import P a y m e n t F a c t o r y
+class C o m p r a A P I V i e w ( APIView ) :
+" " "
+␣ ␣ ␣ ␣ Endpoint ␣ para ␣ procesar ␣ compras ␣ via ␣ JSON .
+␣ ␣ ␣ ␣ POST ␣ / api / comprar /
+␣ ␣ ␣ ␣ Payload : ␣ { ␣ " libro_id " : ␣ 1 , ␣ " d i r e c c i o n _ e n v i o " : ␣ " Calle 123 " ␣ }
+␣ ␣ ␣ ␣ " " "
+def post ( self , request ) :
+# 1. V a l i d a c i o n de datos de entrada ( Adapter )
+s e r i a l i z e r = O r d e n I n p u t S e r i a l i z e r ( data = request . data )
+if not s e r i a l i z e r . is_valid () :
+return Response ( s e r i a l i z e r . errors , status = status .
+H T T P _ 4 0 0 _ B A D _ R E Q U E S T )
+datos = s e r i a l i z e r . v a l i d a t e d _ d a t a
+try :
+# 2. In ye cc io n de D e p e n d e n c i a s ( Factory )
+gateway = P a y m e n t F a c t o r y . g e t _ p r o c e s s o r ()
+# 3. Ej ec uc io n de Logica de Negocio ( Service Layer )
+servicio = C o m p r a S e r v i c e ( p r o c e s a d o r _ p a g o = gateway )
+2
+--- PAGE 3 ---
+# Noten como el servicio NO cambia , solo cambia quien
+lo llama .
+re su lt ad o = servicio . e j e c u t a r _ c o m p r a (
+libro_id = datos [ ’ libro_id ’] ,
+di re cc io n = datos [ ’ d i r e c c i o n _ e n v i o ’] ,
+usuario = request . user # As um ie nd o a u t e n t i c a c i o n
+basica o sesion
+)
+return Response ({
+" estado " : " exito " ,
+" mensaje " : f " Orden ␣ creada . ␣ Total : ␣ { r es ul ta do } "
+} , status = status . H T T P _ 2 0 1 _ C R E A T E D )
+except V a l u e E r r o r as e :
+# Errores de negocio ( ej : Sin stock )
+return Response ({ " error " : str ( e ) } , status = status .
+H T T P _ 4 0 9 _ C O N F L I C T )
+except E x ce pt io n as e :
+# Errores i n e s p e r a d o s
+return Response ({ " error " : " Error ␣ interno " } , status =
+status . H T T P _ 5 0 0 _ I N T E R N A L _ S E R V E R _ E R R O R )
+—
+5. Paso 4: Enrutamiento (URLs)
+Exponga el endpoint entienda app/urls.py.
+from django . urls import path
+from t i e n d a _ a p p . api . views import C o m p r a A P I V i e w
+u r l p a t t e r n s = [
+# ... sus urls antiguas ...
+path ( ’ api / v1 / comprar / ’ , C o m p r a A P I V i e w . as_view () , name = ’
+a p i _ c o m p r a r ’) ,
+]
+—
+3
+--- PAGE 4 ---
+6. Entrega de Resultados
+Evidencia Requerida
+Para la calificaci´ on de este tutorial, el estudiante debe cargar en la plataforma:
+Archivo de Log:el sistema debe descontar inventario y generar el log de
+pagos (usando la Factory que configur´ o la semana pasada). Muestre que al
+comprar por API, la vista HTML de inventario refleja el cambio. Esto prueba
+que ambas ”puertas”(HTML y API) conducen a la misma ”habitaci´ on”(L´ ogi-
+ca de Negocio).
+UsePostmano la interfaz web de DRF para enviar un POST a
+/api/v1/comprar/. Monte una captura de pantalla de esto.
+Entrega:Suba ambos archivos a la Asignaci´ on ”tutorial0-3 DRF&API”.
+4

@@ -1,0 +1,168 @@
+
+--- PAGE 1 ---
+Tutorial 04: Dockerizaci´ on y Despliegue en
+AWS
+De Localhost a la Nube: Infraestructura Inmutable
+Prof. Nicol´ as Ram´ ırez V´ elez - Arquitectura de Software 2026
+1. Objetivo del Laboratorio
+En este tutorial, elevaremos la arquitectura de nuestra aplicaci´ on ”Tienda API”(creada
+en el Tutorial 03). Dejaremos de ejecutarla manualmente en nuestras m´ aquinas locales
+para empaquetarla en contenedores **Docker** y desplegarla en una instancia real de
+**AWS EC2**.
+Prerrequisitos:
+Proyecto del Tutorial 03 funcionando (DRF, Serializers y Service Layer).
+Cuenta activa en AWS Academy.
+Docker Desktop instalado localmente.
+2. Paso 1: Refactorizaci´ on de Configuraci´ on (The En-
+vironment)
+Para que la aplicaci´ on funcione tanto en su laptop como en Docker o AWS, debemos
+dejar de ”quemar”(hardcode) las credenciales de la base de datos. Usaremos variables de
+entorno.
+2.1. 1.1 Modificar settings.py
+Abra su archivosettings.pyy modifique la configuraci´ on de la base de datos para
+que lea del sistema operativo. Necesitar´ a importarosal inicio del archivo.
+1import os
+2
+3# ... resto del codigo ...
+4
+5D AT A BA SE S = {
+6’ default ’: {
+7’ ENGINE ’: ’ django . db . backends . p o s t g r e s q l ’ ,
+8’ NAME ’: os . environ . get ( ’ DB_NAME ’ , ’ ti en da _d b ’) ,
+9’ USER ’: os . environ . get ( ’ DB_USER ’ , ’ postgres ’) ,
+10’ PASSWORD ’: os . environ . get ( ’ D B _ P A S S W O R D ’ , ’ postgres ’) ,
+11’ HOST ’: os . environ . get ( ’ DB_HOST ’ , ’ lo ca lh os t ’) , # I m p o r t a n t e
+para Docker
+12’ PORT ’: os . environ . get ( ’ DB_PORT ’ , ’ 5432 ’) ,
+1
+--- PAGE 2 ---
+13}
+14}
+2.2. 1.2 Crear requirements.txt
+Aseg´ urese de listar todas las dependencias. Ejecute en su terminal:
+1pip freeze > r e q u i r e m e n t s . txt
+Nota: Verifique que ‘psycopg2-binary‘ y ‘djangorestframework‘ est´ en en la lista.
+3. Paso 2: La Receta de la Imagen (Dockerfile)
+En la ra´ ız de su proyecto (al mismo nivel quemanage.py), cree un archivo llamado
+Dockerfile(sin extensi´ on).
+1# 1. Usamos una imagen base oficial de Python ligera
+2FROM python :3.11 - slim
+3
+4# 2. Evitamos que Python escriba archivos . pyc y buffer de logs
+5ENV P Y T H O N D O N T W R I T E B Y T E C O D E 1
+6ENV P Y T H O N U N B U F F E R E D 1
+7
+8# 3. E s t a b l e c e m o s el d i r e c t o r i o de trabajo dentro del c o n t e n e d o r
+9WORKDIR / app
+10
+11# 4. Copiamos los r e q u e r i m i e n t o s e i n s t a l a m o s d e p e n d e n c i a s
+12COPY r e q u i r e m e n t s . txt / app /
+13RUN pip install -- no - cache - dir -r r e q u i r e m e n t s . txt
+14
+15# 5. Copiamos el resto del codigo fuente
+16COPY . / app /
+17
+18# 6. Comando por defecto al iniciar el c o n t e n e d o r
+19# Escucha en el puerto 8000 d i s p o n i b l e para el mundo (0 .0 .0 .0 )
+20CMD [" python " , " manage . py " , " ru ns er ve r " , " 0 . 0 . 0 . 0 : 8 0 0 0 " ]
+4. Paso 3: Orquestaci´ on Local (Docker Compose)
+Para conectar Django con PostgreSQL sin instalar nada en su PC, cree el archivo
+docker-compose.ymlen la ra´ ız del proyecto.
+1version : ’3.8 ’
+2
+3services :
+4db :
+5image : postgres :15
+6volumes :
+7- p o s t g r e s _ d a t a :/ var / lib / p o s t g r e s q l / data
+8e n v i r o n m e n t :
+9- P O S T G R E S _ D B = ti en da _d b
+10- P O S T G R E S _ U S E R = postgres
+11- P O S T G R E S _ P A S S W O R D = s e c r e t _ p a s s w o r d
+12
+13web :
+2
+--- PAGE 3 ---
+14build : .
+15command : python manage . py ru ns er ve r 0 . 0 . 0 . 0 : 8 0 0 0
+16volumes :
+17- .:/ app
+18ports :
+19- " 8 0 0 0 : 8 0 0 0 "
+20d e p e n d s _ o n :
+21- db
+22e n v i r o n m e n t :
+23- DB_NAME = ti en da _d b
+24- DB_USER = postgres
+25- D B _ P A S S W O R D = s e c r e t _ p a s s w o r d
+26- DB_HOST = db # Nombre del servicio definido arriba
+27
+28volumes :
+29p o s t g r e s _ d a t a :
+Prueba Local:Ejecutedocker-compose up --build. Deber´ ıa poder acceder a su
+API enlocalhost:8000/api/v1/comprar/.
+5. Paso 4: Despliegue en AWS Academy
+Ahora llevaremos esto a la nube. Siga estos pasos quir´ urgicos.
+5.1. 4.1 Lanzamiento de Instancia EC2
+1. Ingrese a AWS Academy LMS y lance el laboratorio.
+2. Vaya a la consola de AWS→EC2→Launch Instance.
+3.Name:Servidor-Django.
+4.OS Image:Amazon Linux 2023 AMI (Free tier eligible).
+5.Instance Type:t2.micro.
+6.Key Pair:Seleccionevockey.
+7.Network Settings:Marque las casillas . Allow SSH traffic”, . Allow HTTP traffic 2
+.Allow HTTPS traffic”.
+8. Lance la instancia.
+5.2. 4.2 Conexi´ on SSH
+Haga clic en la instancia creada y presioneConnect. Use la pesta˜ na . EC2 Instance
+Connect”para abrir una terminal en el navegador.
+5.3. 4.3 Preparaci´ on del Quir´ ofano (Instalaci´ on de Software)
+Ejecute los siguientes comandos en la terminal de AWS para instalar Git y Docker:
+3
+--- PAGE 4 ---
+1# A c t u a l i z a r el sistema
+2sudo dnf update -y
+3
+4# Instalar Git y Docker
+5sudo dnf install git docker -y
+6
+7# Iniciar el servicio de Docker
+8sudo service docker start
+9
+10# Dar permisos al usuario para usar Docker sin sudo
+11sudo usermod -a -G docker ec2 - user
+12
+13# I M P O R T A N T E : Cierre la terminal y vuelva a conectar para aplicar
+permisos .
+14exit
+5.4. 4.4 Clonaci´ on y Despliegue
+Vuelva a conectarse a la instancia y traiga su c´ odigo.(Nota: Si no tiene su c´ odigo en
+GitHub, puede crearlo ahora o usar SCP. Asumiremos GitHub).
+1# 1. Clonar su r e p o s i t o r i o ( Use su propia URL )
+2git clone https :// github . com / S U _ U S U A R I O / mi - proyecto - django . git
+3
+4# 2. Entrar a la carpeta
+5cd mi - proyecto - django
+6
+7# 3. Crear el entorno d o c k e r i z a d o en la nube
+8docker compose up -d -- build
+9
+10# 4. Ve ri fi ca r que esta co rr ie nd o
+11docker ps
+Nota: Si la versi´ on de Amazon Linux no trae ‘docker compose‘ (v2) por defecto, puede
+usar ‘docker-compose‘ (v1) o instalar el plugin manualmente.
+5.5. 4.5 Exponer al Mundo (Security Groups)
+Por defecto, el puerto 8000 est´ a cerrado en AWS.
+1. Vaya al panel de EC2→Instances.
+2. Seleccione su instancia→Pesta˜ na ”Security”.
+3. Haga clic en el Security Group (ej:launch-wizard-1).
+4.Edit inbound rules→Add rule.
+5.Type:Custom TCP→Port range:8000→Source:0.0.0.0/0 (Anywhere).
+6. Save rules.
+4
+--- PAGE 5 ---
+6. Entrega de Resultados
+Para validar el laboratorio, tome una captura de pantalla de su navegador accediendo
+a:http://<IP-PUBLICA-EC2>:8000/api/v1/comprar/Debe verse la respuesta JSON de
+su API servida desde AWS.
+5
